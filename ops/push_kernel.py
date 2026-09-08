@@ -46,6 +46,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("kind", choices=["train", "eval", "probe"])
     p.add_argument("--commit", default=None, help="repo commit to pin (default: HEAD)")
+    p.add_argument("--config", default="configs/upvcm_ar.yaml",
+                   help="(train) config to run")
     p.add_argument("--slug-suffix", default="", help="appended to kernel slug")
     p.add_argument("--shard-idx", type=int, default=0)
     p.add_argument("--num-shards", type=int, default=3)
@@ -65,10 +67,15 @@ def main():
     if a.kind == "train":
         mod = importlib.import_module("ops.mk_train_kernel")
         src = mod.TRAIN_BASH.replace("__COMMIT__", commit)
+        src = src.replace("__CONFIG__", a.config)
+        import re
+        m = re.search(r"^out_dir:\s*(\S+)", open(str(REPO / a.config)).read(), re.M)
+        src = src.replace("__OUT_DIR__", m.group(1) if m else "outputs/train")
         src = src.replace("__OVERRIDES__", "train.epochs=16")
     elif a.kind == "eval":
         mod = importlib.import_module("ops.mk_eval_kernel")
         src = mod.EVAL_BASH.replace("__COMMIT__", commit)
+        src = src.replace("__CONFIG__", a.config)
         src = src.replace("__SHARD_ARGS__",
                           f"eval.shard_idx={a.shard_idx} eval.num_shards={a.num_shards}")
         src = src.replace("__SUFFIX__", f"shard{a.shard_idx}")

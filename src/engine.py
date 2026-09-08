@@ -59,6 +59,7 @@ from .models import (
     AdditivePreprocessor,
     CompressAICodec,
     STECodec,
+    UPVCMPreprocessor,
     VideoPreprocessor,
     VirtualCodec,
 )
@@ -108,6 +109,20 @@ def _build_models(cfg: dict, device: torch.device, role: str = "train"):
             strength=float(m.get("strength", 1.0)),
             cond_dim=int(m.get("cond_dim", 1)),
         ).to(device)
+    elif arch == "upvcm":
+        # v7 NEW MODEL (docs/MODEL_UPVCM.md): self-sufficient importance head
+        # (distilled from teacher saliency + DINOv2 energy) driving three
+        # zero-init-gated modules — background decimation, W-gated ROI editor
+        # with FiLM(QP), temporal background stabilisation. Identity at init;
+        # analyzer-free at deploy.
+        pre = UPVCMPreprocessor(
+            s_ch=int(m.get("s_ch", 16)),
+            editor_ch=int(m.get("editor_ch", 24)),
+            cond_dim=int(m.get("cond_dim", 1)),
+            dino_weight=float(m.get("dino_weight", 0.5)),
+            dino_name=str(m.get("dino_name", "dinov2_vits14")),
+            motion_tau=float(m.get("motion_tau", 0.1)),
+        ).to(device)
     elif arch == "unet":
         pre = VideoPreprocessor(
             base_ch=m.get("base_ch", 32),
@@ -119,7 +134,7 @@ def _build_models(cfg: dict, device: torch.device, role: str = "train"):
             edit_kind=str(m.get("edit_kind", "residual")),
         ).to(device)
     else:
-        raise ValueError(f"model.arch must be 'unet' or 'additive', got {arch!r}")
+        raise ValueError(f"model.arch must be 'unet', 'additive', 'additive_cond' or 'upvcm', got {arch!r}")
     cc = cfg["codec"]
     kind = cc.get("kind", "compressai")
     if kind == "entropy":
@@ -314,7 +329,9 @@ def _val_loss(pre, codec, analyzer, loader, weights, qp_list, qp_to_quality,
                 x_pre = pre(clips, cond, mask=mask)
                 x_hat, bpp = codec(x_pre, q)
                 parts = preprocessing_loss(analyzer, clips, x_hat, bpp, target, weights,
-                                           x_pre=x_pre, task_mask=mask)
+                                           x_pre=x_pre, task_mask=mask,
+                                           saliency_pred=getattr(pre, "_last_w", None),
+                                           saliency_target=getattr(pre, "_last_w_target", None))
             finally:
                 if weights.use_task_mask and hasattr(analyzer, "unpin_active"):
                     analyzer.unpin_active()
@@ -468,7 +485,9 @@ def _fit(cfg, pre, codec, analyzer, train_loader, val_loader, prep_batch,
                 x_pre = pre(clips, cond, mask=mask)
                 x_hat, bpp = codec(x_pre, q)
                 parts = preprocessing_loss(analyzer, clips, x_hat, bpp, target, step_w,
-                                           x_pre=x_pre, task_mask=mask)
+                                           x_pre=x_pre, task_mask=mask,
+                                           saliency_pred=getattr(pre, "_last_w", None),
+                                           saliency_target=getattr(pre, "_last_w_target", None))
             finally:
                 if pinned:
                     analyzer.unpin_active()
@@ -505,6 +524,7 @@ def _fit(cfg, pre, codec, analyzer, train_loader, val_loader, prep_batch,
                              tvr=f"{vals['loss_tv_res']:.4f}",
                              dct=f"{vals['loss_dct']:.4f}",
                              dct3=f"{vals['loss_dct3d']:.4f}",
+                             wd=f"{vals.get('loss_w_distill', 0.0):.4f}",
                              lr=f"{lr_now:.1e}", qp=qp)
             tracker.log_step(step, {**vals, "lr": lr_now, "qp": qp})
             if max_steps and step >= max_steps:
@@ -619,7 +639,9 @@ def evaluate(cfg: dict, ckpt_path: str, out_dir: str | None = None) -> dict:
     ckpt_cfg = state.get("cfg") if isinstance(state, dict) else None
     if isinstance(ckpt_cfg, dict) and isinstance(ckpt_cfg.get("model"), dict):
         arch_keys = ("arch", "temporal_frames", "edit_kind", "gate_area", "gate",
-                     "base_ch", "res_scale", "cond_dim", "max_relative_edit")
+                     "base_ch", "res_scale", "cond_dim", "max_relative_edit",
+                     # upvcm arch knobs (must match training exactly)
+                     "s_ch", "editor_ch", "dino_weight", "dino_name", "motion_tau")
         for k in arch_keys:
             if k in ckpt_cfg["model"]:
                 cfg.setdefault("model", {})[k] = ckpt_cfg["model"][k]

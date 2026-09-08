@@ -1,51 +1,42 @@
-# pre_processing_upgrade_7 — THỰC THI ROUND (b): QP-CONDITIONED ADDITIVE EDIT
+# pre_processing_upgrade_7 — UP-VCM: MÔ HÌNH MỚI (universal pre-filter cho VCM)
 
-**Repo v7 thực thi round (b) đã pre-register trong lineage v6**
-(`docs/RUN_DESIGN_qpc.md` — thiết kế + code + tests + bands đóng từ 2026-09-04,
-chỉ thiếu phần chạy vì hết quota GPU Kaggle). V7 mang codebase khoa học v6
-nguyên vẹn, bổ sung **hạ tầng vận hành** (ops/) để chạy trọn vẹn
-train → gates → canonical eval → merge + CI trên Kaggle pool, và là nơi lưu
-kết quả round (b).
+**Repo v7 xây dựng và huấn luyện một kiến trúc MỚI — UP-VCM — khác căn bản với
+Zhao additive editor của lineage v1–v6** (theo chỉ đạo của owner 2026-09-08;
+round-b QPC của v6 đã được bắt đầu chạy rồi **dừng theo quyết định của owner**,
+không tiêu tốn thêm quota).
 
-> **Vai trò repo này trong lineage:** thực hiện phép đo trên trục *duy nhất
-> chưa đo* của họ "allocation not amplitude" — QP-conditioning — theo đúng
-> pre-registration (guard (iv): diff config so lineage kappa=10 là đúng
-> `{model.arch: additive_cond, out_dir}`, không gì khác). Mọi kết luận đọc
-> theo band đã đăng ký: center ~35% / upside ~15% / downside ~50%.
+> Thiết kế đầy đủ: `docs/MODEL_UPVCM.md`. Tóm tắt:
+> - **S**: importance head tự chủ (~44k params cả model) — distill từ
+>   multi-teacher saliency + DINOv2 patch energy; deploy KHÔNG cần analyzer
+>   hay foundation model (khác D1-gate của v6).
+> - **M1** background decimation (blur Y mịn + CbCr thô — mô phỏng yuv420),
+>   gate theo (1−W) — trục *spatial targeting* lineage chưa từng đo.
+> - **M2** ROI editor UNet + FiLM(QP) zero-init, gate theo W.
+> - **M3** temporal background stabilisation: nền tĩnh được thay bằng khung
+>   trước ⇒ residual liên khung ≈ 0 ⇒ codec tự tiết kiệm bit — module
+>   video-native mà mọi image-preprocessor (Zhao/Yang/Lu) không có.
+> - Identity tại init; 88/88 tests; cùng protocol đo chuẩn của lineage
+>   (held-out r2plus1d_18, x264/x265 QP30–50, n=1159, fingerprint 30f083f8520a).
 
-**Ops mới của v7:**
+**Pipeline ops** (giữ từ đầu v7, giờ parameterized theo config):
+`ops/kaggle_env.sh` (KGAT pool) → `ops/push_kernel.py train --config configs/upvcm_ar.yaml`
+→ `ops/gates_upvcm.py` (G1 non-identity / G2 no-blow-up / G3 W healthy / G4 deploy purity)
+→ `ops/push_kernel.py eval --shard-idx N` → `ops/merge_eval.py` (BD-Rate + bootstrap CI + gap rule).
 
-| File | Chức năng |
-|---|---|
-| `ops/kaggle_env.sh` | auth Kaggle pool từ KGAT token (source trước khi dùng CLI) |
-| `ops/mk_train_kernel.py` | sinh notebook train Round (b) (clone repo @commit, index chuẩn fingerprint-checked, resume-aware qua session 12h) |
-| `ops/mk_eval_kernel.py` | sinh notebook eval sharded (checkpoint từ train-kernel output đính kèm) |
-| `ops/push_kernel.py` | build metadata + push kernel train/eval/probe |
-| `ops/gates_qpc.py` | 3 gates pre-registered 0-GPU trên checkpoint (regime / conditionability / no-blow-up) + FiLM utilization audit |
-| `ops/merge_eval.py` | merge shard per-sequence records → BD-Rate + bootstrap CI + gap rule |
-| `scripts/build_train_index.py` | index hash-split chuẩn (test fingerprint `30f083f8520a`) |
-
-**Thay đổi source so với v6** (chỉ phục vụ shard/merge, không đụng đường train):
-`src/engine.py::_apply_eval_shard` — chia deterministic test-set theo clip key
-(md5('<class>/<file>.mp4') % num_shards); `src/data/video_dataset.py` —
-`sequence_id` dùng clip-key ổn định theo mount. Tests suite v6 (80) vẫn phải pass.
+**Kết quả:** `docs/RESULTS_upvcm.md` (điền sau khi eval xong).
 
 **Chạy nhanh:**
 
 ```bash
-pytest -q                                   # 80 tests
-source ops/kaggle_env.sh wagur124705        # KGAT pool auth
-python ops/push_kernel.py probe  --commit <sha>   # kiểm hạ tầng + fingerprint
-python ops/push_kernel.py train --commit <sha>    # Round (b) 16 epochs
-# → gates (CPU):
-python ops/gates_qpc.py --ckpt <pre.pth> --index <index.json>
-# → eval sharded (2-3 kernel):
+pytest -q                                            # 88 tests
+python ops/smoke_local.py                            # full pipeline trên dữ liệu giả
+source ops/kaggle_env.sh wagur124705
+python ops/push_kernel.py train --commit <sha> --accelerator NvidiaTeslaT4
+python ops/gates_upvcm.py --ckpt <pre.pth> --index <index.json>
 python ops/push_kernel.py eval --commit <sha> --shard-idx 0 --num-shards 3 \
-    --train-kernel wagur124705/u7-train
-python ops/merge_eval.py shard0 shard1 shard2 --out outputs/eval_qpc_merged
+    --train-kernel wagur124705/u7-upvcm-train --accelerator NvidiaTeslaT4
+python ops/merge_eval.py shard0 shard1 shard2 --out outputs/eval_upvcm_merged
 ```
-
-**Kết quả round (b):** xem `docs/RESULTS_qpc.md` (sau khi có).
 
 ---
 

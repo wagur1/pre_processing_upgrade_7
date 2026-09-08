@@ -62,7 +62,7 @@ SHARD_ARGS="__SHARD_ARGS__"
 OUT=outputs/eval_qpc__SUFFIX__
 mkdir -p "$OUT"
 
-python evaluate.py --config configs/additive_qpc.yaml \
+python evaluate.py --config __CONFIG__ \
     --ckpt "$CKPT_SRC" \
     --out "$OUT" \
     data.index="$INDEX" \
@@ -79,6 +79,7 @@ import argparse
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--commit", required=True)
+    p.add_argument("--config", default="configs/upvcm_ar.yaml")
     p.add_argument("--shard-idx", type=int, required=True)
     p.add_argument("--num-shards", type=int, default=3)
     a = p.parse_args()
@@ -86,6 +87,7 @@ def main():
     shard_args = f"eval.shard_idx={a.shard_idx} eval.num_shards={a.num_shards}"
     bash = (
         EVAL_BASH.replace("__COMMIT__", a.commit)
+        .replace("__CONFIG__", a.config)
         .replace("__SHARD_ARGS__", shard_args)
         .replace("__SUFFIX__", f"shard{a.shard_idx}")
     )

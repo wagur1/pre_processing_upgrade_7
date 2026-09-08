@@ -65,6 +65,7 @@ class LossWeights:
     kappa: float = 0.0      # RPP adaptive-DCT rate proxy on x_pre, PER-FRAME (0 = off)
     kappa_t: float = 0.0    # same, on SPATIO-TEMPORAL blocks (0 = off); additive to kappa
     mu: float = 0.0      # MSE-to-source L_D (paper's distortion term; 0 = off)
+    rho: float = 0.0     # UP-VCM S-head distillation MSE(S(x), W_target); 0 = off
     use_task_mask: bool = False  # A2: weight gamma/delta by task saliency (spatial)
 
 
@@ -241,6 +242,8 @@ def preprocessing_loss(
     w: LossWeights,
     x_pre: torch.Tensor | None = None,
     task_mask: torch.Tensor | None = None,
+    saliency_pred: torch.Tensor | None = None,
+    saliency_target: torch.Tensor | None = None,
 ) -> Dict[str, torch.Tensor]:
     """Composite preprocessor loss.
 
@@ -249,6 +252,12 @@ def preprocessing_loss(
     penalties are weighted by ``1-mask`` so the preprocessor smooths / stops
     spending bits on *background* while sparing the object the analyzer needs.
     Without a mask the penalties are spatially uniform (upgrade2 behaviour).
+
+    ``saliency_pred`` / ``saliency_target`` (UP-VCM ``rho``): MSE between the
+    model's self-sufficient importance prediction S(x) and its distillation
+    target (teacher saliency, optionally DINOv2-blended — cached on the model
+    as ``_last_w`` / ``_last_w_target``). Independent of the edit path: the
+    mask is NEVER used to gate the UP-VCM edit, only to teach S.
     """
     from .models.task_mask import masked_tv
 
@@ -324,6 +333,14 @@ def preprocessing_loss(
         total = total + w.mu * l_d
     else:
         l_d = x_hat.new_zeros(())
+    # UP-VCM S-head distillation: teach the self-sufficient importance head to
+    # reproduce the (teacher+DINO) target. Gradients flow into S only; the
+    # target is detached on the model side.
+    if w.rho and saliency_pred is not None and saliency_target is not None:
+        l_w = F.mse_loss(saliency_pred, saliency_target.detach())
+        total = total + w.rho * l_w
+    else:
+        l_w = x_hat.new_zeros(())
     return {
         "loss": total,
         "loss_task": l_task.detach(),
@@ -336,4 +353,5 @@ def preprocessing_loss(
         "loss_dct": l_dct.detach(),
         "loss_dct3d": l_dct3d.detach(),
         "loss_d": l_d.detach(),
+        "loss_w_distill": l_w.detach(),
     }

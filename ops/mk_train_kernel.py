@@ -48,7 +48,7 @@ if [ ! -f "$INDEX" ] || ! python -c 'import json,sys; sys.exit("test" not in jso
 fi
 
 # ---- resume: pull the newest checkpoint from this kernel's own output ----
-OUT_DIR=outputs/additive_qpc
+OUT_DIR=__OUT_DIR__
 CKPT_DIR=$OUT_DIR/checkpoints
 mkdir -p "$CKPT_DIR"
 if [ "${FRESH:-0}" != "1" ] && [ -n "$(ls -A /kaggle/input 2>/dev/null)" ]; then
@@ -66,7 +66,7 @@ if cands:
     def rank(p):
         return (os.path.getmtime(p), 1 if p.endswith("_last.pth") else 0)
     src = max(cands, key=rank)
-    dst_dir = "outputs/additive_qpc/checkpoints"
+    dst_dir = "__OUT_DIR__/checkpoints"
     os.makedirs(dst_dir, exist_ok=True)
     dst = os.path.join(dst_dir, "preprocessor_last.pth")
     shutil.copy2(src, dst)
@@ -77,7 +77,7 @@ PY
 fi
 
 # ---- train (resume=true survives session death) ----
-python train.py --config configs/additive_qpc.yaml \
+python train.py --config __CONFIG__ \
     data.index="$INDEX" \
     train.resume=true \
     __OVERRIDES__
@@ -92,11 +92,22 @@ import argparse
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--commit", required=True, help="repo commit to pin")
+    p.add_argument("--config", default="configs/upvcm_ar.yaml")
+    p.add_argument("--out-dir", default=None,
+                   help="outputs subdir (default: config's out_dir)")
     p.add_argument("--overrides", default="", help="extra dotted config overrides")
     p.add_argument("--fresh", action="store_true", help="ignore prior checkpoints")
     a = p.parse_args()
 
+    out_dir = a.out_dir
+    if out_dir is None:
+        import re
+        m = re.search(r"^out_dir:\s*(\S+)", open(a.config).read(), re.M)
+        out_dir = m.group(1) if m else "outputs/train"
+
     bash = TRAIN_BASH.replace("__COMMIT__", a.commit)
+    bash = bash.replace("__CONFIG__", a.config)
+    bash = bash.replace("__OUT_DIR__", out_dir)
     bash = bash.replace("__OVERRIDES__", a.overrides or "train.epochs=16")
     if a.fresh:
         bash = bash.replace("${FRESH:-0}", "1")
