@@ -52,6 +52,9 @@ def main():
     p.add_argument("--train-kernel", default=None,
                    help="(eval) train kernel slug whose output is the checkpoint source")
     p.add_argument("--no-gpu", action="store_true")
+    p.add_argument("--accelerator", default=None,
+                   help="e.g. NvidiaTeslaT4 (P100 sm_60 is INCOMPATIBLE with "
+                        "Kaggle's preinstalled torch: no kernel image)")
     a = p.parse_args()
 
     commit = a.commit or subprocess.run(
@@ -102,6 +105,8 @@ def main():
     (push_dir / "kernel-metadata.json").write_text(json.dumps(meta))
 
     cmd = ["kaggle", "kernels", "push", "-p", str(push_dir)]
+    if a.accelerator:
+        cmd += ["--accelerator", a.accelerator]
     print(f"[push] {' '.join(cmd)}")
     r = subprocess.run(cmd, capture_output=True, text=True)
     print(r.stdout.strip())
