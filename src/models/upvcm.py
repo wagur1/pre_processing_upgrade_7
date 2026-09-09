@@ -74,7 +74,13 @@ class _EditorBlock(nn.Module):
         self.up = nn.ConvTranspose2d(2 * ch, ch, 2, stride=2)
         self.dec = nn.Sequential(nn.Conv2d(2 * ch, ch, 3, padding=1), nn.ReLU(inplace=True))
         self.out = nn.Conv2d(ch, 3, 3, padding=1)
-        nn.init.zeros_(self.out.weight)
+        # NOT zero-init: a zero-init output conv combined with the zero-init
+        # ``edit_strength`` gate is a DEAD saddle (grad of the gate is
+        # proportional to the conv output, grad of the conv to the gate —
+        # both exactly 0; measured on the 16-epoch v7 run where M2 never
+        # opened while M1/M3 did). Small noise keeps identity-at-init via
+        # the gate while leaving both gradients alive.
+        nn.init.normal_(self.out.weight, std=1e-3)
         nn.init.zeros_(self.out.bias)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:

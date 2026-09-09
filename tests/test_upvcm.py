@@ -139,3 +139,26 @@ if __name__ == "__main__":
             fn()
             print(f"PASS {name}")
     print("all upvcm tests passed")
+
+
+def test_m2_gate_gradients_alive_at_init():
+    """Regression: zero-init out conv x zero-init gate = dead saddle (the
+    16-epoch v7 run left M2 permanently closed). With noise-init conv the
+    gate gradient must be nonzero while the model stays ~identity."""
+    torch.manual_seed(0)
+    pre = UPVCMPreprocessor()
+    x = torch.rand(1, 3, 4, 32, 32)
+    out = pre(x, torch.full((1, 1), 0.6))
+    out.pow(2).mean().backward()
+    assert pre.edit_strength.grad is not None
+    assert pre.edit_strength.grad.abs() > 0, "M2 gate is a dead saddle again"
+    # NOTE: editor.out.weight.grad is legitimately 0 at init (it is scaled by
+    # the gate, still 0). The gate moving first is what escapes the saddle;
+    # conv weights receive gradients as soon as the gate is nonzero.
+    g = pre.edit_strength.grad.item()
+    pre2 = pre
+    with torch.no_grad():
+        pre2.edit_strength.fill_(g * 1e3 if abs(g) > 0 else 1e-3)
+    out2 = pre2(torch.rand(1, 3, 4, 32, 32), torch.full((1, 1), 0.6))
+    out2.pow(2).mean().backward()
+    assert pre2.editor.out.weight.grad.abs().sum() > 0, "conv weights can't learn after gate opens"
