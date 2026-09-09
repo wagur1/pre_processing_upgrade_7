@@ -7,12 +7,20 @@
 
 | Bước | Trạng thái | Ghi chú |
 |---|---|---|
-| Tests + smoke local (88/88) | ☐ | full pipeline trên dữ liệu giả |
-| Probe hạ tầng Kaggle | ☐ PASS | fingerprint 30f083f8520a, codec checks |
-| Train 16ep UP-VCM | ☐ | kernel `u7-upvcm-train`, T4 |
-| Gates G1–G4 | ☐ | `ops/gates_upvcm.py` |
-| Eval sharded n=1159 | ☐ | kernels `u7-eval-shard*` |
+| Tests + smoke local (89/89) | ✅ | full pipeline trên dữ liệu giả |
+| Probe hạ tầng Kaggle | ✅ PASS | fingerprint 30f083f8520a, codec checks |
+| Train 16ep UP-VCM v1 | ✅ COMPLETE | best epoch 14/16, ~10h, `wagur124705/u7-train-upvcm` |
+| Đọc gates từ v1 checkpoint | ✅ | dec=−0.6242 (M1 MỞ), edit=0.0000 (**M2 CHẾT — dead-saddle bug**), stab=−0.0782 (M3 mở nhẹ) |
+| Bug fix + v2 retrain | ✅ commit `da97514889b1` | noise-init out conv; kernel `vtk269/u7-train-upvcm-v2` đang chạy |
+| Eval sharded v1 (as-trained: M1+M3) | ⏳ | shard 0+1 RUNNING, shard 2 chờ slot GPU |
 | Merge + bootstrap CI + gap rule | ☐ | `ops/merge_eval.py` |
+
+**Phát hiện v1 (as-trained):** M2 (ROI editor) không bao giờ mở do **dead-saddle
+init** — out conv zero-init × strength gate zero-init ⇒ gradient của cả hai ≡ 0
+từ init (xác nhận bằng unit repro: `test_m2_gate_gradients_alive_at_init`).
+M1/M3 mở được vì content path của chúng khác 0 lúc init. Kết quả v1 đo cơ chế
+M1 + M3; v2 (đã fix) cho phép cả M2 học. Bài học phương pháp luận: identity-at-init
+kép KHÔNG an toàn — đúng MỘT tầng zero (gate), tầng nội dung phải sống.
 
 ## Comparators (từ v6, cùng protocol)
 
