@@ -51,7 +51,10 @@ if [ ! -f "$INDEX" ]; then
 fi
 
 # ---- checkpoint from the TRAIN kernel's attached output ----
-CKPT_SRC=$(find /kaggle/input -name 'preprocessor.pth' -not -path '*/pre_processing_upgrade_7/*' 2>/dev/null | head -1 || true)
+# The train kernel's output = its whole /kaggle/working, so the checkpoint
+# lives at /kaggle/input/<train-slug>/pre_processing_upgrade_7/outputs/<run>/checkpoints/preprocessor.pth
+# (do NOT exclude the repo-dir prefix — that excluded exactly this path).
+CKPT_SRC=$(find /kaggle/input -name 'preprocessor.pth' -path '*outputs*' 2>/dev/null | head -1 || true)
 if [ -z "$CKPT_SRC" ]; then
   echo "ERROR: no preprocessor.pth in /kaggle/input (attach the train kernel's output as a data source)" >&2
   exit 1
