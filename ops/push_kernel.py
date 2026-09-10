@@ -52,7 +52,8 @@ def main():
     p.add_argument("--shard-idx", type=int, default=0)
     p.add_argument("--num-shards", type=int, default=3)
     p.add_argument("--train-kernel", default=None,
-                   help="(eval) train kernel slug whose output is the checkpoint source")
+                   help="(eval) train kernel slug whose output is the checkpoint source")    p.add_argument("--ckpt-dataset", default=None,
+                   help="(eval/tto) dataset slug holding the checkpoint")
     p.add_argument("--no-gpu", action="store_true")
     p.add_argument("--accelerator", default=None,
                    help="e.g. NvidiaTeslaT4 (P100 sm_60 is INCOMPATIBLE with "
@@ -105,6 +106,8 @@ def main():
         "competition_sources": [],
         "model_sources": [],
     }
+    if a.ckpt_dataset and a.kind in ("eval", "tto"):
+        meta["dataset_sources"] = list(meta.get("dataset_sources", [])) + [a.ckpt_dataset]
     if a.kind == "eval" and a.train_kernel:
         # Attach the train kernel's output: newest preprocessor.pth wins.
         meta["kernel_sources"] = [a.train_kernel]
