@@ -43,12 +43,26 @@ kép KHÔNG an toàn — đúng MỘT tầng zero (gate), tầng nội dung ph�
 [G4 deploy purity] diff ____
 ```
 
-### BD-Rate (protocol chuẩn)
+### BD-Rate v1 as-trained (FULL n=1159, 10k bootstrap) — M1+M3, M2 chết
 
 | Codec | BD-Rate | CI95 (bootstrap) | P(BD<0) | gap rule |
 |---|---|---|---|---|
-| h264 | | | | |
-| h265 | | | | |
+| h264 | **−2.46%** | [−4.47, −0.40] | 0.991 | PASS |
+| h265 | −0.78% | [−2.22, +0.71] | 0.841 | PASS |
+
+### BD-Rate v2 (đủ M1+M2+M3, shards 0+1 = 770 seqs, 5k bootstrap)
+
+| Codec | BD-Rate | CI95 (bootstrap) | P(BD<0) | gap rule |
+|---|---|---|---|---|
+| h264 | −0.63% | [−3.07, +1.98] | 0.683 | PASS |
+| h265 | −1.48% | [−3.27, +0.37] | 0.939 | PASS |
+
+**Bất ngờ v2:** M2 mở (−0.038) nhưng h264 giảm 1.83pp so với v1 (−2.46 → −0.63)
+trong khi h265 khá hơn (−0.78 → −1.48). M2 học edit có lợi cho proxy nhưng phá
+transfer sang x264 (block 4×4/8×8 + in-loop deblock nhạy với pattern M2 thêm);
+x265 (block lớn) chấp nhận tốt hơn. Kết luận: gates mở ≠ gates có ích trên codec
+thật; v1 (M1+M3) là cấu hình pre-only tốt nhất của UP-VCM đến giờ — và POST của
+v8 (xem RESULTS_sandwich) là nơi bù đắp đúng vai trò M2.
 
 ### Per-QP
 
