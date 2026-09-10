@@ -48,18 +48,25 @@ from src.models.dino_saliency import get_dino  # noqa: E402
 from src.models.upvcm import UPVCMPreprocessor  # noqa: E402
 from src.models.virtual_codec import VirtualCodec  # noqa: E402
 
-_HAS_SANDWICH = False
+# Sandwich checkpoints (v8) load via FILE-path import, NOT package import:
+# this script already runs inside v7 whose 'src' package is imported first,
+# so 'from src.models.sandwich import ...' would resolve inside v7 and fail.
 SandwichPreprocessor = None
+import importlib.util as _ilu
 for _v8 in (Path("/home/wagur1/pre_processing_upgrade_8"),   # local machine
             Path("/kaggle/working/pre_processing_upgrade_8")):  # kernel
-    if (_v8 / "src" / "models" / "sandwich.py").exists():
-        sys.path.insert(0, str(_v8))
+    _sp = _v8 / "src" / "models" / "sandwich.py"
+    if _sp.exists():
+        _spec = _ilu.spec_from_file_location("_v8_sandwich", _sp)
+        _mod = _ilu.module_from_spec(_spec)
         try:
-            from src.models.sandwich import SandwichPreprocessor  # noqa: E402
-            _HAS_SANDWICH = True
+            _spec.loader.exec_module(_mod)  # needs upvcm/color/dino deps on sys.path
+            SandwichPreprocessor = _mod.SandwichPreprocessor
+            print(f"[tto] SandwichPreprocessor loaded from {_sp}")
             break
-        except Exception:
-            sys.path.pop(0)
+        except Exception as _e:
+            print(f"[tto] v8 load failed ({_e}); POST will be bypassed")
+            SandwichPreprocessor = None
 from src.tasks.base import build_analyzer  # noqa: E402
 
 QPS = [30, 35, 40, 45, 50]
@@ -143,8 +150,8 @@ def main():
     cm = (state.get("cfg") or {}).get("model", {})
     post_restore = None
     if any(k.startswith("post_net.") for k in model_state):
-        if not _HAS_SANDWICH:
-            raise SystemExit("sandwich checkpoint but v8 repo not importable")
+        if SandwichPreprocessor is None:
+            raise SystemExit("sandwich checkpoint but v8 SandwichPreprocessor not loadable")
         sand = SandwichPreprocessor(
             s_ch=int(cm.get("s_ch", 16)), editor_ch=int(cm.get("editor_ch", 24)),
             cond_dim=int(cm.get("cond_dim", 1)),
