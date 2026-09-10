@@ -47,6 +47,13 @@ from src.losses import adaptive_dct_loss  # noqa: E402
 from src.models.dino_saliency import get_dino  # noqa: E402
 from src.models.upvcm import UPVCMPreprocessor  # noqa: E402
 from src.models.virtual_codec import VirtualCodec  # noqa: E402
+
+try:  # optional sandwich support (v8 checkpoints: pre.* + post_net.*)
+    sys.path.insert(0, str(Path("/home/wagur1/pre_processing_upgrade_8")))
+    from src.models.sandwich import SandwichPreprocessor  # noqa: E402
+    _HAS_SANDWICH = True
+except Exception:
+    _HAS_SANDWICH = False
 from src.tasks.base import build_analyzer  # noqa: E402
 
 QPS = [30, 35, 40, 45, 50]
@@ -128,14 +135,31 @@ def main():
     state = torch.load(args.ckpt, map_location="cpu")
     model_state = state["model"] if "model" in state else state
     cm = (state.get("cfg") or {}).get("model", {})
-    pre = UPVCMPreprocessor(
-        s_ch=int(cm.get("s_ch", 16)), editor_ch=int(cm.get("editor_ch", 24)),
-        cond_dim=int(cm.get("cond_dim", 1)),
-        dino_weight=float(cm.get("dino_weight", 0.5)),
-        dino_name=str(cm.get("dino_name", "dinov2_vits14")),
-        motion_tau=float(cm.get("motion_tau", 0.1))).to(device)
-    pre.load_state_dict(model_state, strict=True)
-    pre.eval()
+    post_restore = None
+    if any(k.startswith("post_net.") for k in model_state):
+        if not _HAS_SANDWICH:
+            raise SystemExit("sandwich checkpoint but v8 repo not importable")
+        sand = SandwichPreprocessor(
+            s_ch=int(cm.get("s_ch", 16)), editor_ch=int(cm.get("editor_ch", 24)),
+            cond_dim=int(cm.get("cond_dim", 1)),
+            dino_weight=float(cm.get("dino_weight", 0.5)),
+            dino_name=str(cm.get("dino_name", "dinov2_vits14")),
+            motion_tau=float(cm.get("motion_tau", 0.1)),
+            post_base=int(cm.get("post_base", 32))).to(device)
+        sand.load_state_dict(model_state, strict=True)
+        sand.eval()
+        pre = sand.pre
+        post_restore = sand.post_restore
+        print("[tto] sandwich checkpoint: PRE refine + POST after codec")
+    else:
+        pre = UPVCMPreprocessor(
+            s_ch=int(cm.get("s_ch", 16)), editor_ch=int(cm.get("editor_ch", 24)),
+            cond_dim=int(cm.get("cond_dim", 1)),
+            dino_weight=float(cm.get("dino_weight", 0.5)),
+            dino_name=str(cm.get("dino_name", "dinov2_vits14")),
+            motion_tau=float(cm.get("motion_tau", 0.1))).to(device)
+        pre.load_state_dict(model_state, strict=True)
+        pre.eval()
 
     cc = cfg["codec"]
     proxy = VirtualCodec(
@@ -195,6 +219,11 @@ def main():
                     sc = StandardCodec(codec=name, qp=qp, preset=preset)
                     xh, bpps = sc.compress_decompress_items(clips)
                     xhp, bppps = sc.compress_decompress_items(x_pre.cpu())
+                    if post_restore is not None:
+                        with torch.no_grad():
+                            c_ = torch.full((clips.shape[0], 1), _qp_norm(qp))
+                            xh = post_restore(xh.to(device), c_).cpu()
+                            xhp = post_restore(xhp.to(device), c_).cpu()
                     logits = analyzer.predict(xh.to(device))
                     logits_p = analyzer.predict(xhp.to(device))
                     probs = logits.softmax(dim=1)
