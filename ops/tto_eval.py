@@ -48,24 +48,33 @@ from src.models.dino_saliency import get_dino  # noqa: E402
 from src.models.upvcm import UPVCMPreprocessor  # noqa: E402
 from src.models.virtual_codec import VirtualCodec  # noqa: E402
 
-# Sandwich checkpoints (v8) load via FILE-path import, NOT package import:
-# this script already runs inside v7 whose 'src' package is imported first,
-# so 'from src.models.sandwich import ...' would resolve inside v7 and fail.
+# Sandwich checkpoints (v8): the v8 'src' package is registered under the
+# alias 'v8src' (this script already has v7's 'src' imported — a plain import
+# would resolve inside v7 and fail). Relative imports inside sandwich.py then
+# resolve within the aliased package.
 SandwichPreprocessor = None
+import importlib as _imp
 import importlib.util as _ilu
 for _v8 in (Path("/home/wagur1/pre_processing_upgrade_8"),   # local machine
             Path("/kaggle/working/pre_processing_upgrade_8")):  # kernel
-    _sp = _v8 / "src" / "models" / "sandwich.py"
-    if _sp.exists():
-        _spec = _ilu.spec_from_file_location("_v8_sandwich", _sp)
-        _mod = _ilu.module_from_spec(_spec)
+    _v8_src = _v8 / "src"
+    if (_v8_src / "models" / "sandwich.py").exists():
         try:
-            _spec.loader.exec_module(_mod)  # needs upvcm/color/dino deps on sys.path
-            SandwichPreprocessor = _mod.SandwichPreprocessor
-            print(f"[tto] SandwichPreprocessor loaded from {_sp}")
+            _init = _v8_src / "__init__.py"
+            _spec = _ilu.spec_from_file_location(
+                "v8src", _init if _init.exists() else None,
+                submodule_search_locations=[str(_v8_src)])
+            _pkg = _ilu.module_from_spec(_spec)
+            sys.modules["v8src"] = _pkg
+            if _init.exists():
+                _spec.loader.exec_module(_pkg)
+            _sand = _imp.import_module("v8src.models.sandwich")
+            SandwichPreprocessor = _sand.SandwichPreprocessor
+            print(f"[tto] SandwichPreprocessor loaded from {_v8}")
             break
         except Exception as _e:
-            print(f"[tto] v8 load failed ({_e}); POST will be bypassed")
+            sys.modules.pop("v8src", None)
+            print(f"[tto] v8 load failed ({type(_e).__name__}: {_e}); POST will be bypassed")
             SandwichPreprocessor = None
 from src.tasks.base import build_analyzer  # noqa: E402
 
