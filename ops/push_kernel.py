@@ -44,7 +44,7 @@ def make_notebook(bash_src: str) -> dict:
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("kind", choices=["train", "eval", "probe"])
+    p.add_argument("kind", choices=["train", "eval", "probe", "tto"])
     p.add_argument("--commit", default=None, help="repo commit to pin (default: HEAD)")
     p.add_argument("--config", default="configs/upvcm_ar.yaml",
                    help="(train) config to run")
@@ -79,6 +79,8 @@ def main():
         src = src.replace("__SHARD_ARGS__",
                           f"eval.shard_idx={a.shard_idx} eval.num_shards={a.num_shards}")
         src = src.replace("__SUFFIX__", f"shard{a.shard_idx}")
+    elif a.kind == "tto":
+        src = TTO_BASH.replace("__COMMIT__", commit)
     else:
         src = PROBE_BASH.replace("__COMMIT__", commit)
 
@@ -121,6 +123,34 @@ def main():
         print(r.stderr.strip(), file=sys.stderr)
         sys.exit(r.returncode)
 
+
+TTO_BASH = r"""%%bash
+set -euo pipefail
+export PYTHONUNBUFFERED=1
+cd /kaggle/working
+REPO=/kaggle/working/pre_processing_upgrade_7
+if [ -d "$REPO/.git" ]; then git -C "$REPO" fetch --all -q; git -C "$REPO" checkout -q __COMMIT__
+else git clone -q https://github.com/wagur1/pre_processing_upgrade_7.git "$REPO" && git -C "$REPO" checkout -q __COMMIT__; fi
+cd "$REPO"
+pip install -q opencv-python-headless pyyaml tqdm scipy matplotlib pandas 2>/dev/null | tail -1 || true
+KINETICS_ROOT=""
+for c in /kaggle/input/kinetics-train-5per/train /kaggle/input/datasets/rohanmallick/kinetics-train-5per/kinetics400_5per; do
+  [ -d "$c" ] && KINETICS_ROOT="$c" && break
+done
+if [ -z "$KINETICS_ROOT" ]; then
+  sample=$(find /kaggle/input -maxdepth 8 -type f \( -iname '*.mp4' -o -iname '*.avi' -o -iname '*.mkv' -o -iname '*.webm' \) -print -quit)
+  KINETICS_ROOT=$(dirname "$(dirname "$sample")")
+fi
+INDEX=data/index/kinetics_hash_split.json
+[ -f "$INDEX" ] || python scripts/build_train_index.py --root "$KINETICS_ROOT" --out "$INDEX" --assert-fingerprint 30f083f8520a
+CKPT=$(find /kaggle/input \( -name 'frankenstein_ste.pth' -o -name 'frankenstein.pth' -o -name 'preprocessor.pth' \) -not -path '*/pre_processing_upgrade_7/*' 2>/dev/null | head -1 || true)
+[ -z "$CKPT" ] && { echo "ERROR: no checkpoint in /kaggle/input" >&2; exit 1; }
+echo "[tto] ckpt: $CKPT"
+mkdir -p outputs/tto_screen
+python ops/tto_eval.py --ckpt "$CKPT" --index "$INDEX" --config configs/upvcm_ar.yaml \
+    --out outputs/tto_screen --limit 100 --steps 30
+echo "[tto] screen done"
+"""
 
 PROBE_BASH = r"""%%bash
 set -euo pipefail
