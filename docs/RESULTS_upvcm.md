@@ -50,12 +50,12 @@ kép KHÔNG an toàn — đúng MỘT tầng zero (gate), tầng nội dung ph�
 | h264 | **−2.46%** | [−4.47, −0.40] | 0.991 | PASS |
 | h265 | −0.78% | [−2.22, +0.71] | 0.841 | PASS |
 
-### BD-Rate v2 (đủ M1+M2+M3, shards 0+1 = 770 seqs, 5k bootstrap)
+### BD-Rate v2 (đủ M1+M2+M3, FULL n=1159, 10k bootstrap)
 
 | Codec | BD-Rate | CI95 (bootstrap) | P(BD<0) | gap rule |
 |---|---|---|---|---|
-| h264 | −0.63% | [−3.07, +1.98] | 0.683 | PASS |
-| h265 | −1.48% | [−3.27, +0.37] | 0.939 | PASS |
+| h264 | −0.35% | [−2.37, +1.82] | 0.620 | PASS |
+| h265 | −1.47% | [−2.92, −0.00] | 0.975 | PASS |
 
 **Bất ngờ v2:** M2 mở (−0.038) nhưng h264 giảm 1.83pp so với v1 (−2.46 → −0.63)
 trong khi h265 khá hơn (−0.78 → −1.48). M2 học edit có lợi cho proxy nhưng phá
