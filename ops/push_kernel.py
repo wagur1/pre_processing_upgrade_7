@@ -52,7 +52,8 @@ def main():
     p.add_argument("--shard-idx", type=int, default=0)
     p.add_argument("--num-shards", type=int, default=3)
     p.add_argument("--train-kernel", default=None,
-                   help="(eval) train kernel slug whose output is the checkpoint source")    p.add_argument("--ckpt-dataset", default=None,
+                   help="(eval) train kernel slug whose output is the checkpoint source")
+    p.add_argument("--ckpt-dataset", default=None,
                    help="(eval/tto) dataset slug holding the checkpoint")
     p.add_argument("--no-gpu", action="store_true")
     p.add_argument("--accelerator", default=None,
