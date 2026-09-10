@@ -136,6 +136,11 @@ REPO=/kaggle/working/pre_processing_upgrade_7
 if [ -d "$REPO/.git" ]; then git -C "$REPO" fetch --all -q; git -C "$REPO" checkout -q __COMMIT__
 else git clone -q https://github.com/wagur1/pre_processing_upgrade_7.git "$REPO" && git -C "$REPO" checkout -q __COMMIT__; fi
 cd "$REPO"
+# sandwich checkpoints need the v8 repo for SandwichPreprocessor
+V8=/kaggle/working/pre_processing_upgrade_8
+if [ ! -f "$V8/src/models/sandwich.py" ]; then
+  git clone -q https://github.com/wagur1/pre_processing_upgrade_8.git "$V8" 2>/dev/null || true
+fi
 pip install -q opencv-python-headless pyyaml tqdm scipy matplotlib pandas 2>/dev/null | tail -1 || true
 KINETICS_ROOT=""
 for c in /kaggle/input/kinetics-train-5per/train /kaggle/input/datasets/rohanmallick/kinetics-train-5per/kinetics400_5per; do

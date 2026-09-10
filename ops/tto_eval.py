@@ -48,12 +48,18 @@ from src.models.dino_saliency import get_dino  # noqa: E402
 from src.models.upvcm import UPVCMPreprocessor  # noqa: E402
 from src.models.virtual_codec import VirtualCodec  # noqa: E402
 
-try:  # optional sandwich support (v8 checkpoints: pre.* + post_net.*)
-    sys.path.insert(0, str(Path("/home/wagur1/pre_processing_upgrade_8")))
-    from src.models.sandwich import SandwichPreprocessor  # noqa: E402
-    _HAS_SANDWICH = True
-except Exception:
-    _HAS_SANDWICH = False
+_HAS_SANDWICH = False
+SandwichPreprocessor = None
+for _v8 in (Path("/home/wagur1/pre_processing_upgrade_8"),   # local machine
+            Path("/kaggle/working/pre_processing_upgrade_8")):  # kernel
+    if (_v8 / "src" / "models" / "sandwich.py").exists():
+        sys.path.insert(0, str(_v8))
+        try:
+            from src.models.sandwich import SandwichPreprocessor  # noqa: E402
+            _HAS_SANDWICH = True
+            break
+        except Exception:
+            sys.path.pop(0)
 from src.tasks.base import build_analyzer  # noqa: E402
 
 QPS = [30, 35, 40, 45, 50]
