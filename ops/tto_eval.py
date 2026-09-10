@@ -243,7 +243,8 @@ def main():
                     xhp, bppps = sc.compress_decompress_items(x_pre.cpu())
                     if post_restore is not None:
                         with torch.no_grad():
-                            c_ = torch.full((clips.shape[0], 1), _qp_norm(qp))
+                            c_ = torch.full((clips.shape[0], 1), _qp_norm(qp),
+                                            device=clips.device, dtype=clips.dtype)
                             xh = post_restore(xh.to(device), c_).cpu()
                             xhp = post_restore(xhp.to(device), c_).cpu()
                     logits = analyzer.predict(xh.to(device))
